@@ -138,8 +138,13 @@ class VMHvlSNNSimulation:
             stimRaw[(self.time >= self.s_on + i * s_on_interval) & (self.time < self.s_on + i * s_on_interval + self.s_duration)] = 1
         
         # Smooth stimulus and normalize
-        stim = np.convolve(stimRaw, np.ones(100), mode='same')
-        stim = stim / (np.finfo(float).eps + stim.max())
+        # stim = np.convolve(stimRaw, np.ones(100), mode='same')
+        # stim = stim / (np.finfo(float).eps + stim.max())
+        alpha = 2e-3
+        stim = np.zeros_like(stimRaw)
+        stim[0] = stimRaw[0]
+        for i in range(1, len(stimRaw)):
+            stim[i] = alpha * stimRaw[i] + (1 - alpha) * stim[i-1]
 
         return stim
 
@@ -165,9 +170,11 @@ class VMHvlSNNSimulation:
         Plot the external stimulus over time.
         """
 
+        plt.figure(figsize=(6, 5))
         plt.plot(self.time, self.stim)
+        plt.xlim([0, self.simulation_time])
         plt.title('Smoothed External Stimulus Over Time')
-        plt.xlabel('Time (s)')
+        plt.xlabel('Time (ms)')
         plt.ylabel('Stimulus Intensity')
         plt.show()
 
@@ -206,13 +213,29 @@ class VMHvlSNNSimulation:
         
         print('\nSimulation complete.')
 
-        # # Smooth the spike history
-        # exp_smooth_alpha = 0.99999
-        # spk_history_smoothed = np.zeros_like(spk_history)
-        # for t in range(1, len(self.time)):
-        #     spk_history_smoothed[:, t] = exp_smooth_alpha * spk_history[:, t] + (1 - exp_smooth_alpha) * spk_history_smoothed[:, t-1]
-
         self.spk_history = spk_history
+        print('Spike history recorded.')
+
+        # Save spike rate
+        print('Calculating spike rate history...')
+        window_size = int(round(1 / self.dt * 1e3))
+        for cell_idx in range(self.N):
+            spk_rate = np.convolve(self.spk_history[cell_idx, :], np.ones(window_size), mode='same') / window_size
+            if cell_idx == 0:
+                spk_rate_history = spk_rate
+            else:
+                spk_rate_history = np.vstack((spk_rate_history, spk_rate))
+
+        # Smooth the spike rate history
+        print('Smoothing...')
+        alpha = 2e-3
+        spk_rate_history_smoothed = np.zeros_like(spk_rate_history)
+        spk_rate_history_smoothed[:, 0] = spk_rate_history[:, 0]
+        for t in range(1, spk_rate_history.shape[1]):
+            spk_rate_history_smoothed[:, t] = alpha * spk_rate_history[:, t] + (1 - alpha) * spk_rate_history_smoothed[:, t-1]
+
+        self.spk_rate_history = spk_rate_history_smoothed
+        print('Spike rate history recorded.')
     
     def _update_network(self, x, p, I, s, spk):
         """
@@ -327,10 +350,9 @@ class VMHvlSNNSimulation:
         if cell_idx is None:
             cell_idx = np.arange(self.N)
 
-        if self.spk_history is not None:
+        if self.spk_rate_history is not None:
             if isinstance(cell_idx, int):
-                window_size = int(round(1 / self.dt * 1e3))
-                spk_rate = np.convolve(self.spk_history[cell_idx, :], np.ones(window_size), mode='same') / window_size
+                spk_rate = self.spk_rate_history[cell_idx, :]
                 plt.figure(figsize=(6, 3))
                 plt.plot(self.time, spk_rate)
                 plt.title(f'Spike Rate of Neuron {cell_idx}')
@@ -339,8 +361,7 @@ class VMHvlSNNSimulation:
                 plt.show()
             else:
                 for idx in cell_idx:
-                    window_size = int(round(1 / self.dt * 1e3))
-                    spk_rate = np.convolve(self.spk_history[idx, :], np.ones(window_size), mode='same') / window_size
+                    spk_rate = self.spk_rate_history[cell_idx, :]
                     plt.figure(figsize=(6, 3))
                     plt.plot(self.time, spk_rate)
                     plt.title(f'Spike Rate of Neuron {idx}')
@@ -348,7 +369,7 @@ class VMHvlSNNSimulation:
                     plt.ylabel('Spike Rate')
                     plt.show()
         else:
-            print('No spike history found. Run the simulation first.')
+            print('No spike rate history found. Run the simulation first.')
 
     def plot_raster(self, cell_indices=None):
         """
@@ -372,18 +393,35 @@ class VMHvlSNNSimulation:
         else:
             print('No spike history found. Run the simulation first.')
 
-    def plot_network_rate(self):
+    def plot_network_rate(self, cell_idx=None):
         """
         Plot the firing rate of the network.
+
+        Parameters:
+        cell_idx : int or list
+            Index of the cell to plot the firing rate for.
         """
-        
-        if self.spk_history is not None:
-            firing_rate = np.sum(self.spk_history, axis=0) / self.N
-            plt.figure(figsize=(6, 5))
-            plt.plot(self.time, firing_rate)
-            plt.title('Firing Rate of the Network')
-            plt.xlabel('Time (ms)')
-            plt.ylabel('Firing Rate')
-            plt.show()
+
+        if cell_idx is None:
+            cell_idx = np.arange(self.N)
+
+        if self.spk_rate_history is not None:
+            if isinstance(cell_idx, int):
+                spk_rate = self.spk_rate_history[cell_idx, :]
+                plt.figure(figsize=(6, 5))
+                plt.plot(self.time, spk_rate)
+                plt.title('Firing Rate of the Network')
+                plt.xlabel('Time (ms)')
+                plt.ylabel('Firing Rate')
+                plt.show()
+            else:
+                network_rate = np.sum(self.spk_rate_history[cell_idx, :], axis=0)
+                plt.figure(figsize=(6, 5))
+                plt.plot(self.time, network_rate)
+                plt.title('Firing Rate of the Network')
+                plt.xlabel('Time (ms)')
+                plt.ylabel('Firing Rate')
+                plt.show()
         else:
-            print('No spike history found. Run the simulation first.')
+            print('No spike rate history found. Run the simulation first.')
+
