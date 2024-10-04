@@ -3,11 +3,10 @@ import matplotlib.pyplot as plt
 import time
 import sys
 
-class VMHvlSNNSimulation:
+class SNNSimulator:
     def __init__(self,
-        x1_percentage,
-        x2_percentage,
         N=1000,
+        cell_ids=None,
         W=None,
         threshold=0.1,
         v_r=0,
@@ -28,12 +27,10 @@ class VMHvlSNNSimulation:
         Initialize the hypothalamic network simulation with given parameters.
 
         Parameters:
-        x1_percentage : float
-            Percentage of x1 neurons to be activated (0 to 1).
-        x2_percentage : float
-            Percentage of x2 neurons to be activated (0 to 1).
         N : int
             Number of neurons (default 1000).
+        cell_ids : list
+            List of cell identifiers (default None).
         W : numpy array
             Connectivity matrix for the network (default None).
         threshold : float
@@ -75,11 +72,13 @@ class VMHvlSNNSimulation:
         self.noise = noise
 
         # Network parameters
-        self.x1_percentage = x1_percentage
-        self.x2_percentage = x2_percentage
         self.N = N
+        if cell_ids is None:
+            self.cell_ids = np.arange(N)
+        else:
+            self.cell_ids = cell_ids
         if W is None:
-            self.W = self._create_connectivity_matrix()         # Create the connectivity matrix
+            self.W = self._create_connectivity_matrix()
         else:
             self.W = W
         self.threshold = threshold
@@ -97,22 +96,16 @@ class VMHvlSNNSimulation:
         self.g_input = g_input
         self.stim = self._generate_external_stimulus()      # Generate external stimulus
         
-        # Weight matrices for neurons receiving external inputs
-        self.w1 = np.zeros(N)
-        self.w2 = np.zeros(N)
-        self._assign_inputs()                               # Assign external input to x1 and x2 neurons
-                                                            # based on the percentages provided
-
     def _create_connectivity_matrix(self):
         """
-        Create the connectivity matrix for the network.
+        Create a sparse connectivity matrix for the network.
 
         Returns:
         W : numpy array
             Connectivity matrix for the network.
         """
 
-        # Create the netowrk connectivity matrix W_ij ~ U(0, 1/sqrt(N))
+        # Create the network connectivity matrix W_ij ~ U(0, 1/sqrt(N))
         N = self.N
         W = np.random.rand(N, N) * (np.random.rand(N, N) < 0.01) / np.sqrt(N)   # Make a matrix with very sparse (1%) connectivity
 
@@ -142,23 +135,6 @@ class VMHvlSNNSimulation:
             stim[i] = alpha * stimRaw[i] + (1 - alpha) * stim[i-1]
 
         return stim
-
-    def _assign_inputs(self):
-        """
-        Assign external input to 20% of the x1 and x2 neurons based on the percentages provided.
-        """
-
-        # Assign x1 neurons
-        num_x1_neurons = round(self.N / 5 * self.x1_percentage)
-        if num_x1_neurons > 0:
-            x1_indices = np.arange(0, num_x1_neurons)
-            self.w1[x1_indices] = self.g_input
-
-        # Assign x2 neurons
-        num_x2_neurons = round(self.N / 5 * self.x2_percentage)
-        if num_x2_neurons > 0:
-            x2_indices = np.arange(int(self.N / 5), int(self.N / 5) + num_x2_neurons)
-            self.w2[x2_indices] = self.g_input
 
     def plot_stimulus(self):
         """
